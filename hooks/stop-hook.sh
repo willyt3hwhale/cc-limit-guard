@@ -19,9 +19,20 @@ if [[ -z "$CLAUDE_SESSION_KEY" ]]; then
   exit 0
 fi
 
-# Run Swift script silently - it will sleep if above threshold
+# Check cached usage first (from statusline) - much faster than running Swift
+CACHE_FILE="/tmp/cc-limit-guard-usage-cache"
+THRESHOLD=90
+
+if [[ -f "$CACHE_FILE" ]]; then
+  CACHED_USAGE=$(cat "$CACHE_FILE" | grep -o '[0-9]*' | head -1)
+  if [[ -n "$CACHED_USAGE" ]] && [[ "$CACHED_USAGE" -lt "$THRESHOLD" ]]; then
+    # Below threshold - exit immediately without running slow Swift
+    exit 0
+  fi
+fi
+
+# Above threshold or no cache - run Swift to handle sleep
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 swift "${SCRIPT_DIR}/rate_limit_guard.swift" >/dev/null 2>&1
 
-# Exit silently - statusline handles display
 exit 0
