@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "rate-limit-guard",
-      "source": ".",
+      "source": "./",
       "description": "Automatically pauses Claude Code when usage exceeds 90% to avoid hitting rate limits",
       "version": "1.0.0",
       "author": {
