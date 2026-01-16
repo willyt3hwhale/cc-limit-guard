@@ -1,0 +1,9 @@
+{
+  "name": "cc-limit-guard",
+  "description": "Claude Code plugins for rate limit management",
+  "plugins": {
+    "rate-limit-guard": {
+      "path": ".."
+    }
+  }
+}
