@@ -4,6 +4,7 @@ import Foundation
 
 let threshold = 90
 let verbose = CommandLine.arguments.contains("--verbose") || CommandLine.arguments.contains("-v")
+let noSleep = CommandLine.arguments.contains("--no-sleep")
 
 // Check for bypass
 if ProcessInfo.processInfo.environment["CLAUDE_NO_LIMIT"] == "1" {
@@ -66,7 +67,7 @@ Task {
             print("✓ Usage: \(utilization)% (threshold: \(threshold)%)")
         }
 
-        if utilization >= threshold {
+        if utilization >= threshold && !noSleep {
             // Calculate sleep time until reset
             var sleepSeconds = 600 // Default 10 minutes
 
