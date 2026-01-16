@@ -12,7 +12,7 @@ A Claude Code plugin that monitors your usage and automatically pauses when appr
 
 ## Installation
 
-### Option 1: Via marketplace (recommended)
+### Via marketplace
 
 In Claude Code, run:
 ```
@@ -20,7 +20,7 @@ In Claude Code, run:
 /plugin add rate-limit-guard@cc-limit-guard
 ```
 
-### Option 2: Via --plugin-dir
+### Via --plugin-dir (alternative)
 
 ```bash
 git clone https://github.com/willyt3hwhale/cc-limit-guard ~/.claude/plugins/local/cc-limit-guard
@@ -85,6 +85,10 @@ CLAUDE_NO_LIMIT=1 claude
 - macOS (uses Swift for API calls)
 - Claude Pro/Max subscription
 - `jq` installed (`brew install jq`)
+
+## Compatibility
+
+- **ralph-wiggum**: Compatible. The plugin automatically stays silent during active ralph loops to avoid interfering with the loop's Stop hook.
 
 ## How it works
 
