@@ -21,7 +21,8 @@ fi
 
 CACHE_FILE="/tmp/cc-limit-guard-usage-cache"
 CACHE_MAX_AGE=30
-THRESHOLD=90
+SESSION_THRESHOLD=90
+WEEKLY_THRESHOLD=95
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Check if cache is fresh
@@ -35,37 +36,45 @@ fi
 
 # If cache is fresh, use cached value
 if [[ "$CACHE_FRESH" == "true" ]]; then
-  # Cache format is "Usage: X%" - extract just the number
-  CACHED_USAGE=$(cat "$CACHE_FILE" | grep -o '[0-9]*' | head -1)
-  if [[ -n "$CACHED_USAGE" ]]; then
-    # Output usage info
-    jq -n --arg msg "Usage: ${CACHED_USAGE}% (threshold: ${THRESHOLD}%)" '{"systemMessage": $msg}'
+  # Cache format is "session|weekly" (e.g. "56|3")
+  CACHED=$(cat "$CACHE_FILE")
+  CACHED_SESSION=$(echo "$CACHED" | cut -d'|' -f1)
+  CACHED_WEEKLY=$(echo "$CACHED" | cut -d'|' -f2)
 
-    if [[ "$CACHED_USAGE" -lt "$THRESHOLD" ]]; then
-      # Below threshold - exit immediately
+  if [[ -n "$CACHED_SESSION" ]]; then
+    # Output usage info
+    jq -n --arg msg "Session: ${CACHED_SESSION}% | Weekly: ${CACHED_WEEKLY}%" '{"systemMessage": $msg}'
+
+    # Check both thresholds
+    if [[ "$CACHED_SESSION" -lt "$SESSION_THRESHOLD" ]] && [[ "$CACHED_WEEKLY" -lt "$WEEKLY_THRESHOLD" ]]; then
       exit 0
     fi
   fi
 fi
 
 # Cache stale or above threshold - run Node to get fresh data
+# Output format: "✓ Session: 56% (threshold: 90%) | Weekly: 3% (threshold: 95%)"
 OUTPUT=$(node "${SCRIPT_DIR}/rate_limit_guard.js" --verbose --no-sleep 2>/dev/null)
-USAGE_WITH_PCT=$(echo "$OUTPUT" | grep -o '[0-9]*%' | head -1)
-USAGE=$(echo "$USAGE_WITH_PCT" | tr -d '%')
 
-# Update cache (write full format for statusline compatibility)
-if [[ -n "$USAGE" ]]; then
-  echo "Usage: ${USAGE_WITH_PCT}" > "$CACHE_FILE"
+# Extract session and weekly percentages
+SESSION=$(echo "$OUTPUT" | grep -oE 'Session: [0-9]+' | grep -oE '[0-9]+')
+WEEKLY=$(echo "$OUTPUT" | grep -oE 'Weekly: [0-9]+' | grep -oE '[0-9]+')
+
+# Update cache
+if [[ -n "$SESSION" ]]; then
+  echo "${SESSION}|${WEEKLY}" > "$CACHE_FILE"
 fi
 
 # Output usage info for fresh fetch
-if [[ -n "$USAGE" ]]; then
-  jq -n --arg msg "Usage: ${USAGE}% (threshold: ${THRESHOLD}%)" '{"systemMessage": $msg}'
+if [[ -n "$SESSION" ]]; then
+  jq -n --arg msg "Session: ${SESSION}% | Weekly: ${WEEKLY}%" '{"systemMessage": $msg}'
 fi
 
-# If above threshold, run Node again to sleep
-if [[ -n "$USAGE" ]] && [[ "$USAGE" -ge "$THRESHOLD" ]]; then
-  node "${SCRIPT_DIR}/rate_limit_guard.js" --verbose 2>/dev/null
+# If above either threshold, run Node again to sleep
+if [[ -n "$SESSION" ]]; then
+  if [[ "$SESSION" -ge "$SESSION_THRESHOLD" ]] || [[ "$WEEKLY" -ge "$WEEKLY_THRESHOLD" ]]; then
+    node "${SCRIPT_DIR}/rate_limit_guard.js" --verbose 2>/dev/null
+  fi
 fi
 
 exit 0

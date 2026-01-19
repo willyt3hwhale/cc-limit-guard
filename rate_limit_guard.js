@@ -9,7 +9,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const THRESHOLD = 90;
+const SESSION_THRESHOLD = 90;
+const WEEKLY_THRESHOLD = 95;
 const verbose = process.argv.includes('--verbose') || process.argv.includes('-v');
 const noSleep = process.argv.includes('--no-sleep');
 
@@ -106,17 +107,39 @@ async function main() {
   try {
     const data = await fetchUsage(sessionKey, orgId);
 
+    // Extract session (5-hour) usage
     const fiveHour = data.five_hour || {};
-    const utilization = fiveHour.utilization || 0;
-    const resetsAt = fiveHour.resets_at;
+    const sessionUsage = fiveHour.utilization || 0;
+    const sessionResetsAt = fiveHour.resets_at;
 
-    const usageStr = formatUsage(utilization);
+    // Extract weekly (7-day) usage
+    const sevenDay = data.seven_day || {};
+    const weeklyUsage = sevenDay.utilization || 0;
+    const weeklyResetsAt = sevenDay.resets_at;
+
+    const sessionStr = formatUsage(sessionUsage);
+    const weeklyStr = formatUsage(weeklyUsage);
 
     if (verbose) {
-      console.log(`✓ Usage: ${usageStr}% (threshold: ${THRESHOLD}%)`);
+      console.log(`✓ Session: ${sessionStr}% (threshold: ${SESSION_THRESHOLD}%) | Weekly: ${weeklyStr}% (threshold: ${WEEKLY_THRESHOLD}%)`);
     }
 
-    if (utilization >= THRESHOLD && !noSleep) {
+    // Check session limit first, then weekly
+    let shouldSleep = false;
+    let sleepReason = '';
+    let resetsAt = null;
+
+    if (sessionUsage >= SESSION_THRESHOLD) {
+      shouldSleep = true;
+      sleepReason = `session at ${sessionStr}%`;
+      resetsAt = sessionResetsAt;
+    } else if (weeklyUsage >= WEEKLY_THRESHOLD) {
+      shouldSleep = true;
+      sleepReason = `weekly at ${weeklyStr}%`;
+      resetsAt = weeklyResetsAt;
+    }
+
+    if (shouldSleep && !noSleep) {
       // Calculate sleep time
       let sleepSeconds = 600; // Default 10 minutes
 
@@ -132,7 +155,10 @@ async function main() {
       }
 
       const minutes = Math.floor(sleepSeconds / 60);
-      console.log(`⚠️  Claude usage at ${usageStr}% - sleeping ${minutes} minutes until reset...`);
+      const hours = Math.floor(minutes / 60);
+      const timeStr = hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
+
+      console.log(`⚠️  Claude ${sleepReason} - sleeping ${timeStr} until reset...`);
 
       await sleep(sleepSeconds * 1000);
       console.log('✓ Resuming after rate limit cooldown');
