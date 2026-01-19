@@ -25,10 +25,19 @@ SESSION_THRESHOLD=90
 WEEKLY_THRESHOLD=95
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
+# Cross-platform file modification time (seconds since epoch)
+get_file_mtime() {
+  if [[ "$(uname)" == "Darwin" ]]; then
+    stat -f %m "$1" 2>/dev/null || echo 0
+  else
+    stat -c %Y "$1" 2>/dev/null || echo 0
+  fi
+}
+
 # Check if cache is fresh
 CACHE_FRESH=false
 if [[ -f "$CACHE_FILE" ]]; then
-  CACHE_AGE=$(($(date +%s) - $(stat -f %m "$CACHE_FILE" 2>/dev/null || echo 0)))
+  CACHE_AGE=$(($(date +%s) - $(get_file_mtime "$CACHE_FILE")))
   if [[ $CACHE_AGE -lt $CACHE_MAX_AGE ]]; then
     CACHE_FRESH=true
   fi
