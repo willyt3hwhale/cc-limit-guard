@@ -35,20 +35,32 @@ fi
 
 # If cache is fresh, use cached value
 if [[ "$CACHE_FRESH" == "true" ]]; then
+  # Cache format is "Usage: X%" - extract just the number
   CACHED_USAGE=$(cat "$CACHE_FILE" | grep -o '[0-9]*' | head -1)
-  if [[ -n "$CACHED_USAGE" ]] && [[ "$CACHED_USAGE" -lt "$THRESHOLD" ]]; then
-    # Below threshold - exit immediately
-    exit 0
+  if [[ -n "$CACHED_USAGE" ]]; then
+    # Output usage info
+    jq -n --arg msg "Usage: ${CACHED_USAGE}% (threshold: ${THRESHOLD}%)" '{"systemMessage": $msg}'
+
+    if [[ "$CACHED_USAGE" -lt "$THRESHOLD" ]]; then
+      # Below threshold - exit immediately
+      exit 0
+    fi
   fi
 fi
 
 # Cache stale or above threshold - run Swift to get fresh data
 OUTPUT=$(swift "${SCRIPT_DIR}/rate_limit_guard.swift" --verbose --no-sleep 2>/dev/null)
-USAGE=$(echo "$OUTPUT" | grep -o '[0-9]*%' | head -1 | tr -d '%')
+USAGE_WITH_PCT=$(echo "$OUTPUT" | grep -o '[0-9]*%' | head -1)
+USAGE=$(echo "$USAGE_WITH_PCT" | tr -d '%')
 
-# Update cache
+# Update cache (write full format for statusline compatibility)
 if [[ -n "$USAGE" ]]; then
-  echo "$USAGE" > "$CACHE_FILE"
+  echo "Usage: ${USAGE_WITH_PCT}" > "$CACHE_FILE"
+fi
+
+# Output usage info for fresh fetch
+if [[ -n "$USAGE" ]]; then
+  jq -n --arg msg "Usage: ${USAGE}% (threshold: ${THRESHOLD}%)" '{"systemMessage": $msg}'
 fi
 
 # If above threshold, run Swift again to sleep
