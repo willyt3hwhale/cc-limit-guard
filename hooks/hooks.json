@@ -1,12 +1,12 @@
 {
   "description": "Rate limit guard - pauses when usage exceeds threshold",
   "hooks": {
-    "UserPromptSubmit": [
+    "PreToolUse": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/prompt-hook.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pretool-hook.sh",
             "timeout": 18000
           }
         ]
