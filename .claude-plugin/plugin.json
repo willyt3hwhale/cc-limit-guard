@@ -1,6 +1,6 @@
 {
   "name": "rate-limit-guard",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Automatically pauses Claude Code when usage exceeds 90% to avoid hitting rate limits",
   "author": {
     "name": "willyt3hwhale"
