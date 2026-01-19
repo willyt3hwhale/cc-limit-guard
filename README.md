@@ -4,11 +4,19 @@ A Claude Code plugin that monitors your usage and automatically pauses when appr
 
 ## Features
 
-- Checks usage after each Claude response
-- Displays current usage percentage in the status line
-- Automatically sleeps when usage exceeds threshold (default: 90%)
-- Resumes automatically when the 5-hour billing window resets
+- Monitors both session (5-hour) and weekly (7-day) usage limits
+- Checks usage before each tool call
+- Automatically sleeps when usage exceeds thresholds
+- Resumes automatically when the billing window resets
+- Cross-platform (macOS, Linux, Windows)
 - Bypass option for when you need to use all your tokens
+
+## Thresholds
+
+| Limit | Threshold | Reset Period |
+|-------|-----------|--------------|
+| Session | 90% | Every 5 hours |
+| Weekly | 95% | Every 7 days |
 
 ## Installation
 
@@ -61,13 +69,13 @@ chmod 600 ~/.claude/secrets
 
 ## Usage
 
-Once configured, the plugin runs automatically. After each Claude response, you'll see:
+Once configured, the plugin runs automatically. You'll see usage info as a system message:
 
 ```
-Stop says: ✓ Usage: 29% (threshold: 90%)
+Session: 29% | Weekly: 12%
 ```
 
-When usage exceeds 90%, the plugin will:
+When either threshold is exceeded, the plugin will:
 1. Display a warning message
 2. Sleep until the billing window resets
 3. Resume automatically
@@ -82,9 +90,9 @@ CLAUDE_NO_LIMIT=1 claude
 
 ## Requirements
 
-- macOS (uses Swift for API calls)
+- Node.js 18+ (uses built-in fetch)
 - Claude Pro/Max subscription
-- `jq` installed (`brew install jq`)
+- `jq` installed (`brew install jq` / `apt install jq`)
 
 ## Compatibility
 
@@ -92,12 +100,13 @@ CLAUDE_NO_LIMIT=1 claude
 
 ## How it works
 
-The plugin uses a Stop hook that runs after each Claude response. It:
+The plugin uses a PreToolUse hook that runs before each tool call. It:
 
-1. Fetches usage data from the Claude.ai API using Swift's URLSession
-2. Compares current usage against the threshold
+1. Fetches usage data from the Claude.ai API using Node.js
+2. Compares session and weekly usage against thresholds
 3. If above threshold, calculates time until reset and sleeps
 4. Outputs status via JSON systemMessage for display
+5. Caches results for 30 seconds to minimize API calls
 
 ## License
 
