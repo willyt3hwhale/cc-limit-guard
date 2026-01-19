@@ -48,8 +48,8 @@ if [[ "$CACHE_FRESH" == "true" ]]; then
   fi
 fi
 
-# Cache stale or above threshold - run Swift to get fresh data
-OUTPUT=$(swift "${SCRIPT_DIR}/rate_limit_guard.swift" --verbose --no-sleep 2>/dev/null)
+# Cache stale or above threshold - run Node to get fresh data
+OUTPUT=$(node "${SCRIPT_DIR}/rate_limit_guard.js" --verbose --no-sleep 2>/dev/null)
 USAGE_WITH_PCT=$(echo "$OUTPUT" | grep -o '[0-9]*%' | head -1)
 USAGE=$(echo "$USAGE_WITH_PCT" | tr -d '%')
 
@@ -63,9 +63,9 @@ if [[ -n "$USAGE" ]]; then
   jq -n --arg msg "Usage: ${USAGE}% (threshold: ${THRESHOLD}%)" '{"systemMessage": $msg}'
 fi
 
-# If above threshold, run Swift again to sleep
+# If above threshold, run Node again to sleep
 if [[ -n "$USAGE" ]] && [[ "$USAGE" -ge "$THRESHOLD" ]]; then
-  swift "${SCRIPT_DIR}/rate_limit_guard.swift" --verbose 2>/dev/null
+  node "${SCRIPT_DIR}/rate_limit_guard.js" --verbose 2>/dev/null
 fi
 
 exit 0
