@@ -94,10 +94,6 @@ CLAUDE_NO_LIMIT=1 claude
 - Claude Pro/Max subscription
 - `jq` installed (`brew install jq` / `apt install jq`)
 
-## Compatibility
-
-- **ralph-wiggum**: Compatible. The plugin automatically stays silent during active ralph loops to avoid interfering with the loop's Stop hook.
-
 ## How it works
 
 The plugin uses a PreToolUse hook that runs before each tool call. It:
