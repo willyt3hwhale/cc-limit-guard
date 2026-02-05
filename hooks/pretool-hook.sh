@@ -9,17 +9,6 @@ if [[ "$CLAUDE_NO_LIMIT" == "1" ]]; then
   exit 0
 fi
 
-# Load secrets file
-SECRETS_FILE="$HOME/.claude/secrets"
-if [[ -f "$SECRETS_FILE" ]]; then
-  source "$SECRETS_FILE"
-fi
-
-# Check for required env vars
-if [[ -z "$CLAUDE_SESSION_KEY" ]] || [[ -z "$CLAUDE_ORG_ID" ]]; then
-  exit 0
-fi
-
 CACHE_FILE="/tmp/cc-limit-guard-usage-cache"
 LOCK_FILE="/tmp/cc-limit-guard-updating"
 CACHE_MAX_AGE=30

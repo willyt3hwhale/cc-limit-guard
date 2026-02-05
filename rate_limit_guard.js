@@ -1,156 +1,73 @@
 #!/usr/bin/env node
 /**
  * Cross-platform rate limit guard for Claude Code.
- * Uses Node.js built-in fetch with Safari User-Agent to bypass Cloudflare.
+ * Queries the Anthropic API for rate limit headers using Claude Code's
+ * own credentials (OAuth tokens from keychain/credentials file, or ANTHROPIC_API_KEY).
  *
+ * No manual session keys or org IDs needed.
  * No external dependencies required (Node 18+).
  */
 
-const fs = require('fs');
-const path = require('path');
+const { getAuth, queryLimits, formatReset } = require('./query_limits');
 
 const SESSION_THRESHOLD = 90;
 const WEEKLY_THRESHOLD = 95;
 const verbose = process.argv.includes('--verbose') || process.argv.includes('-v');
 const noSleep = process.argv.includes('--no-sleep');
 
-function loadSecrets() {
-  const secretsPath = path.join(process.env.HOME, '.claude', 'secrets');
-  const secrets = {};
-
-  try {
-    const content = fs.readFileSync(secretsPath, 'utf8');
-    for (const line of content.split('\n')) {
-      let trimmed = line.trim();
-      if (trimmed.startsWith('export ')) {
-        trimmed = trimmed.slice(7);
-      }
-      const eqIndex = trimmed.indexOf('=');
-      if (eqIndex > 0) {
-        const key = trimmed.slice(0, eqIndex);
-        let value = trimmed.slice(eqIndex + 1);
-        // Remove surrounding quotes
-        if ((value.startsWith('"') && value.endsWith('"')) ||
-            (value.startsWith("'") && value.endsWith("'"))) {
-          value = value.slice(1, -1);
-        }
-        secrets[key] = value;
-      }
-    }
-  } catch (e) {
-    // File doesn't exist or unreadable
-  }
-
-  return secrets;
-}
-
-async function fetchUsage(sessionKey, orgId) {
-  const url = `https://claude.ai/api/organizations/${orgId}/usage`;
-
-  const response = await fetch(url, {
-    headers: {
-      'Cookie': `sessionKey=${sessionKey}`,
-      'Accept': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15'
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(`API returned status ${response.status}`);
-  }
-
-  return response.json();
-}
-
-function parseResetTime(isoString) {
-  if (!isoString) return null;
-  try {
-    return new Date(isoString);
-  } catch (e) {
-    return null;
-  }
-}
-
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function formatUsage(utilization) {
-  return utilization === Math.floor(utilization)
-    ? utilization.toString()
-    : utilization.toFixed(1);
+  const pct = utilization * 100;
+  return pct === Math.floor(pct) ? pct.toString() : pct.toFixed(1);
 }
 
 async function main() {
-  // Check for bypass
   if (process.env.CLAUDE_NO_LIMIT === '1') {
-    if (verbose) console.log('⚠️  Rate limit guard bypassed (CLAUDE_NO_LIMIT=1)');
-    process.exit(0);
-  }
-
-  // Load secrets from file first, then check env vars
-  const secrets = loadSecrets();
-
-  const sessionKey = process.env.CLAUDE_SESSION_KEY || secrets.CLAUDE_SESSION_KEY;
-  const orgId = process.env.CLAUDE_ORG_ID || secrets.CLAUDE_ORG_ID;
-
-  if (!sessionKey) {
-    if (verbose) console.log('⚠️  No CLAUDE_SESSION_KEY set - skipping rate limit check');
-    process.exit(0);
-  }
-
-  if (!orgId) {
-    if (verbose) console.log('⚠️  No CLAUDE_ORG_ID set - skipping rate limit check');
+    if (verbose) console.log('Rate limit guard bypassed (CLAUDE_NO_LIMIT=1)');
     process.exit(0);
   }
 
   try {
-    const data = await fetchUsage(sessionKey, orgId);
+    const auth = getAuth();
+    const info = await queryLimits(auth, verbose);
 
-    // Extract session (5-hour) usage
-    const fiveHour = data.five_hour || {};
-    const sessionUsage = fiveHour.utilization || 0;
-    const sessionResetsAt = fiveHour.resets_at;
+    const sessionClaim = info.claims['5h'];
+    const weeklyClaim = info.claims['7d'];
 
-    // Extract weekly (7-day) usage
-    const sevenDay = data.seven_day || {};
-    const weeklyUsage = sevenDay.utilization || 0;
-    const weeklyResetsAt = sevenDay.resets_at;
+    const sessionUsage = sessionClaim ? sessionClaim.utilization * 100 : 0;
+    const weeklyUsage = weeklyClaim ? weeklyClaim.utilization * 100 : 0;
 
-    const sessionStr = formatUsage(sessionUsage);
-    const weeklyStr = formatUsage(weeklyUsage);
+    const sessionStr = formatUsage(sessionClaim ? sessionClaim.utilization : 0);
+    const weeklyStr = formatUsage(weeklyClaim ? weeklyClaim.utilization : 0);
 
     if (verbose) {
-      console.log(`✓ Session: ${sessionStr}% (threshold: ${SESSION_THRESHOLD}%) | Weekly: ${weeklyStr}% (threshold: ${WEEKLY_THRESHOLD}%)`);
+      console.log(`Session: ${sessionStr}% (threshold: ${SESSION_THRESHOLD}%) | Weekly: ${weeklyStr}% (threshold: ${WEEKLY_THRESHOLD}%)`);
     }
 
-    // Check session limit first, then weekly
     let shouldSleep = false;
     let sleepReason = '';
-    let resetsAt = null;
+    let resetEpoch = null;
 
     if (sessionUsage >= SESSION_THRESHOLD) {
       shouldSleep = true;
       sleepReason = `session at ${sessionStr}%`;
-      resetsAt = sessionResetsAt;
+      resetEpoch = sessionClaim?.reset;
     } else if (weeklyUsage >= WEEKLY_THRESHOLD) {
       shouldSleep = true;
       sleepReason = `weekly at ${weeklyStr}%`;
-      resetsAt = weeklyResetsAt;
+      resetEpoch = weeklyClaim?.reset;
     }
 
     if (shouldSleep && !noSleep) {
-      // Calculate sleep time
-      let sleepSeconds = 600; // Default 10 minutes
+      let sleepSeconds = 600; // default 10 minutes
 
-      if (resetsAt) {
-        const resetTime = parseResetTime(resetsAt);
-        if (resetTime) {
-          const now = new Date();
-          const secondsUntilReset = Math.floor((resetTime - now) / 1000) + 60; // 1 min buffer
-          if (secondsUntilReset > 0) {
-            sleepSeconds = secondsUntilReset;
-          }
+      if (resetEpoch) {
+        const secondsUntilReset = Math.floor(resetEpoch - Date.now() / 1000) + 60;
+        if (secondsUntilReset > 0) {
+          sleepSeconds = secondsUntilReset;
         }
       }
 
@@ -158,16 +75,16 @@ async function main() {
       const hours = Math.floor(minutes / 60);
       const timeStr = hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
 
-      console.log(`⚠️  Claude ${sleepReason} - sleeping ${timeStr} until reset...`);
+      console.log(`Claude ${sleepReason} - sleeping ${timeStr} until reset...`);
 
       await sleep(sleepSeconds * 1000);
-      console.log('✓ Resuming after rate limit cooldown');
+      console.log('Resuming after rate limit cooldown');
     }
 
     process.exit(0);
 
   } catch (e) {
-    if (verbose) console.log(`⚠️  Error checking usage: ${e.message}`);
+    if (verbose) console.log(`Error checking usage: ${e.message}`);
     process.exit(0);
   }
 }
